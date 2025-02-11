@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-const COBALT_API = "https://api.allorigins.win/raw?url=https://cobalt-api.kwiatekmiki.com";
+const COBALT_API = "https://cobalt-api.kwiatekmiki.com";
 const CHANNEL_API = "https://backendmix-emergeny.vercel.app/list";
 const DOWNLOAD_DIR = path.join(__dirname, "..", "sio");
 const DOWNLOADS_JSON = path.join(__dirname, "..", "downloads.json");
@@ -11,133 +11,147 @@ const MAX_RETRIES = 3;
 const CHANNEL_ID = "UCEEi1lDCkKi1ukmTAgc9-zA"; 
 const FILE_BASE_URL = "https://sioyt.netlify.app/sio/";
 
-// Ensure the download directory exists
-if (!fs.existsSync(DOWNLOAD_DIR)) {
-    fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-}
+// Create axios instance with timeout and error handling
+const axiosInstance = axios.create({
+    timeout: 30000, // 30 second timeout
+    validateStatus: status => status >= 200 && status < 300
+});
 
-// Load existing downloads data
-let downloadsData = {};
-if (fs.existsSync(DOWNLOADS_JSON)) {
-    try {
-        downloadsData = JSON.parse(fs.readFileSync(DOWNLOADS_JSON, "utf-8"));
-    } catch (err) {
-        console.error("❌ Failed to load downloads.json, resetting file.");
-        downloadsData = {};
+// Initialize directory and downloads data
+async function initialize() {
+    if (!fs.existsSync(DOWNLOAD_DIR)) {
+        fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
     }
+
+    let downloadsData = {};
+    if (fs.existsSync(DOWNLOADS_JSON)) {
+        try {
+            downloadsData = JSON.parse(fs.readFileSync(DOWNLOADS_JSON, "utf-8"));
+            console.log("📚 Loaded existing downloads data");
+        } catch (err) {
+            console.error("❌ Failed to load downloads.json:", err.message);
+            console.log("🔄 Creating new downloads data");
+        }
+    }
+    return downloadsData;
 }
 
-(async () => {
+// Fetch channel videos
+async function fetchChannelVideos() {
     try {
         console.log(`🔍 Fetching videos for channel ID: ${CHANNEL_ID}...`);
-        const response = await axios.get(`${CHANNEL_API}/${CHANNEL_ID}`);
+        const response = await axiosInstance.get(`${CHANNEL_API}/${CHANNEL_ID}`);
+        console.log("📡 Channel API Response:", JSON.stringify(response.data, null, 2));
 
-        if (!response.data || !response.data.videos || response.data.videos.length === 0) {
-            console.error("❌ No videos found for this channel.");
-            process.exit(1);
+        if (!response.data?.videos?.length) {
+            throw new Error("No videos found in channel response");
         }
 
-        const videos = response.data.videos;
-        console.log(`📹 Found ${videos.length} videos. Checking for new downloads...`);
+        return response.data.videos;
+    } catch (err) {
+        console.error("❌ Channel API Error:", err.response?.data || err.message);
+        throw err;
+    }
+}
 
-        for (const video of videos) {
-            const videoId = video.id;
-            const videoTitle = video.title;
-            const filename = `${videoId}.mp3`;
-            const filePath = path.join(DOWNLOAD_DIR, filename);
-            const fileUrl = `${FILE_BASE_URL}${filename}`;
+// Download single video
+async function downloadVideo(video, downloadsData) {
+    const { id: videoId, title: videoTitle } = video;
+    const filename = `${videoId}.mp3`;
+    const filePath = path.join(DOWNLOAD_DIR, filename);
+    const fileUrl = `${FILE_BASE_URL}${filename}`;
 
-            // Skip if already downloaded and valid
-            if (downloadsData[videoId] && fs.existsSync(filePath) && downloadsData[videoId].size > 0) {
-                console.log(`⏭️ Skipping ${videoTitle}, already downloaded and valid.`);
-                continue;
-            }
+    // Skip if already downloaded and valid
+    if (downloadsData[videoId] && fs.existsSync(filePath) && downloadsData[videoId].size > 0) {
+        console.log(`⏭️ Skipping ${videoTitle}, already downloaded and valid.`);
+        return true;
+    }
 
-            console.log(`🎵 Downloading audio for: ${videoTitle} (ID: ${videoId})...`);
+    console.log(`🎵 Downloading audio for: ${videoTitle} (ID: ${videoId})...`);
 
-            let success = false;
-            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                try {
-                    console.log(`🔄 Attempt ${attempt}/${MAX_RETRIES}...`);
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            console.log(`🔄 Attempt ${attempt}/${MAX_RETRIES}...`);
 
-                    // Get the download URL from Cobalt API
-                    const downloadResponse = await axios.post(
-                        `${COBALT_API}/`,
-                        {
-                            url: `https://www.youtube.com/watch?v=${videoId}`,
-                            audioFormat: "mp3",
-                            downloadMode: "audio"
-                        },
-                        {
-                            headers: {
-                                "Accept": "application/json",
-                                "Content-Type": "application/json"
-                            }
-                        }
-                    );
-
-                    const { status, url } = downloadResponse.data;
-                    if (status !== "redirect" && status !== "tunnel") {
-                        throw new Error("Failed to retrieve audio URL");
-                    }
-
-                    // Download the audio file
-                    const writer = fs.createWriteStream(filePath);
-                    const audioResponse = await axios({ url, method: "GET", responseType: "stream" });
-
-                    audioResponse.data.pipe(writer);
-
-                    await new Promise((resolve, reject) => {
-                        writer.on("finish", resolve);
-                        writer.on("error", reject);
-                    });
-
-                    // Get file size
-                    const fileSize = fs.statSync(filePath).size;
-
-                    if (fileSize === 0) {
-                        throw new Error("Downloaded file size is 0 bytes");
-                    }
-
-                    console.log(`✅ Downloaded: ${filePath} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
-
-                    // Save to downloads.json
-                    downloadsData[videoId] = {
-                        title: videoTitle,
-                        id: videoId,
-                        filePath: fileUrl, // Updated to use URL format
-                        size: fileSize
-                    };
-
-                    fs.writeFileSync(DOWNLOADS_JSON, JSON.stringify(downloadsData, null, 2));
-
-                    // Commit the file immediately
-                    commitFile(filePath, videoId);
-                    success = true;
-                    break;
-                } catch (err) {
-                    console.error(`⚠️ Error downloading ${videoTitle}: ${err.message}`);
-                    if (attempt === MAX_RETRIES) {
-                        console.error(`❌ Failed after ${MAX_RETRIES} attempts, skipping.`);
+            // Get download URL from Cobalt API
+            const downloadResponse = await axiosInstance.post(
+                `${COBALT_API}/`,
+                {
+                    url: `https://www.youtube.com/watch?v=${videoId}`,
+                    audioFormat: "mp3",
+                    downloadMode: "audio"
+                },
+                {
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
                     }
                 }
+            );
+
+            console.log("📡 Cobalt API Response:", JSON.stringify(downloadResponse.data, null, 2));
+
+            const { status, url } = downloadResponse.data;
+            if (status !== "redirect" && status !== "tunnel") {
+                throw new Error(`Invalid status: ${status}`);
             }
 
-            if (!success) {
-                console.error(`🚨 Skipped: ${videoTitle} due to repeated errors.`);
+            // Download and save the audio file
+            const writer = fs.createWriteStream(filePath);
+            const audioResponse = await axiosInstance({
+                url,
+                method: "GET",
+                responseType: "stream"
+            });
+
+            audioResponse.data.pipe(writer);
+
+            await new Promise((resolve, reject) => {
+                writer.on("finish", resolve);
+                writer.on("error", reject);
+            });
+
+            const fileSize = fs.statSync(filePath).size;
+            if (fileSize === 0) {
+                throw new Error("Downloaded file is empty");
             }
+
+            console.log(`✅ Downloaded: ${filePath} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+            // Update downloads data
+            downloadsData[videoId] = {
+                title: videoTitle,
+                id: videoId,
+                filePath: fileUrl,
+                size: fileSize,
+                downloadedAt: new Date().toISOString()
+            };
+
+            fs.writeFileSync(DOWNLOADS_JSON, JSON.stringify(downloadsData, null, 2));
+            await commitFile(filePath, videoId);
+            return true;
+
+        } catch (err) {
+            console.error(`⚠️ Error downloading ${videoTitle} (Attempt ${attempt}/${MAX_RETRIES}):`, 
+                err.response?.data || err.message);
+            
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath); // Clean up failed download
+            }
+            
+            if (attempt === MAX_RETRIES) {
+                console.error(`❌ Failed after ${MAX_RETRIES} attempts`);
+                return false;
+            }
+            
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
         }
-    } catch (error) {
-        console.error("❌ Error:", error.message);
     }
-})();
+}
 
-/**
- * Commits a downloaded file to the repository
- * @param {string} filePath
- * @param {string} videoId
- */
-function commitFile(filePath, videoId) {
+// Commit file to repository
+async function commitFile(filePath, videoId) {
     try {
         execSync("git config --global user.name 'github-actions'");
         execSync("git config --global user.email 'github-actions@github.com'");
@@ -146,6 +160,25 @@ function commitFile(filePath, videoId) {
         execSync("git push");
         console.log(`📤 Committed and pushed ${filePath}`);
     } catch (err) {
-        console.error("❌ Error committing file:", err.message);
+        console.error("❌ Git commit error:", err.message);
+        throw err;
     }
 }
+
+// Main execution
+(async () => {
+    try {
+        const downloadsData = await initialize();
+        const videos = await fetchChannelVideos();
+        console.log(`📹 Found ${videos.length} videos. Starting download process...`);
+
+        for (const video of videos) {
+            await downloadVideo(video, downloadsData);
+        }
+
+        console.log("✅ Processing complete!");
+    } catch (error) {
+        console.error("🚨 Fatal error:", error.message);
+        process.exit(1);
+    }
+})();
