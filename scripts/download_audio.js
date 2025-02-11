@@ -72,7 +72,8 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
                         {
                             url: `https://www.youtube.com/watch?v=${videoId}`,
                             audioFormat: "mp3",
-                            downloadMode: "audio"
+                            downloadMode: "audio",
+                            filenameStyle: "basic"
                         },
                         {
                             headers: {
