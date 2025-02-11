@@ -12,21 +12,16 @@ const CHANNEL_ID = "UCEEi1lDCkKi1ukmTAgc9-zA"; // 🔥 Hardcoded Channel ID
 const FILE_BASE_URL = "https://sioyt.netlify.app/sio/";
 
 // Ensure the download directory exists
+// Ensure the download directory exists
 if (!fs.existsSync(DOWNLOAD_DIR)) {
     fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 }
 
-// Load existing downloads data and update old file paths
+// Load existing downloads data
 let downloadsData = {};
 if (fs.existsSync(DOWNLOADS_JSON)) {
     try {
         downloadsData = JSON.parse(fs.readFileSync(DOWNLOADS_JSON, "utf-8"));
-        for (const videoId in downloadsData) {
-            if (!downloadsData[videoId].filePath.startsWith(FILE_BASE_URL)) {
-                downloadsData[videoId].filePath = `${FILE_BASE_URL}${videoId}.mp3`;
-            }
-        }
-        fs.writeFileSync(DOWNLOADS_JSON, JSON.stringify(downloadsData, null, 2));
     } catch (err) {
         console.error("❌ Failed to load downloads.json, resetting file.");
         downloadsData = {};
@@ -72,8 +67,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
                         {
                             url: `https://www.youtube.com/watch?v=${videoId}`,
                             audioFormat: "mp3",
-                            downloadMode: "audio",
-                            filenameStyle: "basic"
+                            downloadMode: "audio"
                         },
                         {
                             headers: {
