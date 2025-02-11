@@ -43,23 +43,21 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
             process.exit(1);
         }
 
-        const videos = response.data.videos;
-        console.log(`📹 Found ${videos.length} videos. Checking for new downloads...`);
+        const videoIds = response.data.videos; // Now just an array of video IDs
+        console.log(`📹 Found ${videoIds.length} videos. Checking for new downloads...`);
 
-        for (const video of videos) {
-            const videoId = video.id;
-            const videoTitle = video.title;
+        for (const videoId of videoIds) {
             const filename = `${videoId}.mp3`;
             const filePath = path.join(DOWNLOAD_DIR, filename);
             const fileUrl = `${FILE_BASE_URL}${filename}`;
 
             // Skip if already downloaded and valid
             if (downloadsData[videoId] && fs.existsSync(filePath) && downloadsData[videoId].size > 0) {
-                console.log(`⏭️ Skipping ${videoTitle}, already downloaded and valid.`);
+                console.log(`⏭️ Skipping ${videoId}, already downloaded and valid.`);
                 continue;
             }
 
-            console.log(`🎵 Downloading audio for: ${videoTitle} (ID: ${videoId})...`);
+            console.log(`🎵 Downloading audio for video ID: ${videoId}...`);
 
             let success = false;
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -68,7 +66,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
 
                     // Get the download URL from the new MP3 API
                     const downloadResponse = await axios.get(`${MP3_API}/${videoId}`);
-                    const { status, url } = downloadResponse.data;
+                    const { url, title } = downloadResponse.data;
 
                     if (!url) {
                         throw new Error("Failed to retrieve audio URL");
@@ -101,7 +99,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
 
                     // Save to downloads.json
                     downloadsData[videoId] = {
-                        title: videoTitle,
+                        title: title || videoId, // Use title from API response if available
                         id: videoId,
                         filePath: fileUrl,
                         size: fileSize
@@ -114,7 +112,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
                     success = true;
                     break;
                 } catch (err) {
-                    console.error(`⚠️ Error downloading ${videoTitle}: ${err.message}`);
+                    console.error(`⚠️ Error downloading ${videoId}: ${err.message}`);
                     if (attempt === MAX_RETRIES) {
                         console.error(`❌ Failed after ${MAX_RETRIES} attempts, skipping.`);
                     }
@@ -124,7 +122,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
             }
 
             if (!success) {
-                console.error(`🚨 Skipped: ${videoTitle} due to repeated errors.`);
+                console.error(`🚨 Skipped: ${videoId} due to repeated errors.`);
             }
         }
     } catch (error) {
