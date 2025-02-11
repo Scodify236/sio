@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-const COBALT_API = "https://cobalt-api.kwiatekmiki.com";
+const COBALT_API = "https://api.allorigins.win/raw?url=https://cobalt-api.kwiatekmiki.com";
 const CHANNEL_API = "https://backendmix-emergeny.vercel.app/list";
 const DOWNLOAD_DIR = path.join(__dirname, "..", "sio");
 const DOWNLOADS_JSON = path.join(__dirname, "..", "downloads.json");
