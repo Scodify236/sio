@@ -23,7 +23,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
         downloadsData = JSON.parse(fs.readFileSync(DOWNLOADS_JSON, "utf-8"));
         for (const videoId in downloadsData) {
             if (!downloadsData[videoId].filePath.startsWith(FILE_BASE_URL)) {
-                downloadsData[videoId].filePath = `${FILE_BASE_URL}${videoId}.mp3`;
+                downloadsData[videoId].filePath = `${FILE_BASE_URL}${videoId}.weba`;
             }
         }
         fs.writeFileSync(DOWNLOADS_JSON, JSON.stringify(downloadsData, null, 2));
@@ -47,7 +47,7 @@ if (fs.existsSync(DOWNLOADS_JSON)) {
         console.log(`📹 mujhe ${videoIds.length} videos mili h dekhta hu kitni bachi h`);
 
         for (const videoId of videoIds) {
-            const filename = `${videoId}.webm`;
+            const filename = `${videoId}.weba`;
             const filePath = path.join(DOWNLOAD_DIR, filename);
             const fileUrl = `${FILE_BASE_URL}${filename}`;
 
